@@ -4,11 +4,11 @@ const fetch = require('node-fetch');
 const app = express();
 app.use(express.json());
 
-const LOCAL_URL = process.env.LOCAL_URL; // Twój lokalny backend, np. https://xxxx.trycloudflare.com
+let LOCAL_URL = process.env.LOCAL_URL || null; // Cloudflared URL, aktualizowany dynamicznie
 const MAX_RETRY = 3;
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL; // Discord webhook URL do logów
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
-// Funkcja logująca do Discorda
+// Logi do Discorda
 async function logToDiscord(message) {
   if (!DISCORD_WEBHOOK_URL) return;
   try {
@@ -22,12 +22,21 @@ async function logToDiscord(message) {
   }
 }
 
+// Endpoint do update LOCAL_URL (cloudflared może wysyłać POST z aktualnym URL)
+app.post('/update-local-url', async (req, res) => {
+  if (!req.body.url) return res.status(400).send('Missing url');
+  LOCAL_URL = req.body.url;
+  console.log(`LOCAL_URL updated: ${LOCAL_URL}`);
+  await logToDiscord(`LOCAL_URL updated: ${LOCAL_URL}`);
+  res.sendStatus(200);
+});
+
+// Endpoint webhook forwardujący requesty
 app.post('/webhook', async (req, res) => {
   console.log('Webhook received:', req.body);
   await logToDiscord(`Webhook received: ${JSON.stringify(req.body)}`);
 
   if (!LOCAL_URL) {
-    console.log('Local backend offline. Skipping forward.');
     await logToDiscord('Local backend offline. Skipping forward.');
     return res.status(200).send('Local backend offline');
   }
@@ -53,7 +62,6 @@ app.post('/webhook', async (req, res) => {
   }
 
   if (!success) {
-    console.log('Failed to forward webhook after retries');
     await logToDiscord('Failed to forward webhook after retries');
     return res.status(502).send('Failed to forward webhook');
   }
@@ -61,6 +69,11 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 });
 
-app.listen(3000, () => {
-  console.log('Proxy running on port 3000');
+// Opcjonalny GET endpoint testowy
+app.get('/', (req, res) => {
+  res.send('Proxy running');
+});
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`Proxy running on port ${process.env.PORT || 3000}`);
 });
