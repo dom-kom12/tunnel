@@ -1,85 +1,47 @@
-const express = require('express');
-const fetch = require('node-fetch');
-const cors = require('cors');
+const express = require("express");
+const fetch = require("node-fetch");
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1452696366374584494/hLYEBopGOVeCAu6zEsxzmMkSDE4bXf74PnddS6FAqsQ6ouU2iz0mHG_Q8QdXECZNdsWJ";
-let LOCAL_URL = process.env.LOCAL_URL || null; // render / cloudflared URL
-const MAX_RETRY = 3;
-let queue = [];
+let LOCAL_URL = null;
+const PORT = process.env.PORT || 3000;
 
-async function logToDiscord(message) {
-  if (!DISCORD_WEBHOOK_URL) return;
-  try {
-    await fetch(DISCORD_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: message })
-    });
-  } catch (err) {
-    console.error('Discord logging failed:', err.message);
-  }
-}
+// endpoint do aktualizacji ngrok URL
+app.post("/update-local-url", (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).send("Missing url");
 
-async function forwardWebhook(body) {
-  let attempt = 0;
-  let success = false;
-  while (attempt < MAX_RETRY && !success) {
-    try {
-      await fetch(`${LOCAL_URL}/webhook`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      success = true;
-      await logToDiscord('Webhook forwarded.');
-    } catch (err) {
-      attempt++;
-      await logToDiscord(`Retry ${attempt} failed: ${err.message}`);
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  }
-  if (!success) {
-    queue.push(body);
-    await logToDiscord('Added to queue.');
-  }
-}
+  LOCAL_URL = url;
+  console.log("✅ LOCAL_URL updated:", LOCAL_URL);
+  res.sendStatus(200);
+});
 
-app.post('/webhook', async (req, res) => {
-  console.log('Proxy received:', req.body);
-  await logToDiscord(`Proxy received: ${JSON.stringify(req.body)}`);
+// webhook / API
+app.post("/webhook", async (req, res) => {
   if (!LOCAL_URL) {
-    queue.push(req.body);
-    await logToDiscord('Local backend offline, added to queue.');
-    return res.status(200).send('Local backend offline, added to queue');
+    console.log("❌ No LOCAL_URL yet");
+    return res.status(503).send("Tunnel not ready");
   }
-  await forwardWebhook(req.body);
-  res.sendStatus(200);
-});
 
-app.post('/update-local-url', async (req, res) => {
-  if (!req.body.url) return res.status(400).send('Missing url');
-  LOCAL_URL = req.body.url;
-  console.log(`LOCAL_URL updated: ${LOCAL_URL}`);
-  await logToDiscord(`LOCAL_URL updated: ${LOCAL_URL}`);
-  res.sendStatus(200);
-});
+  try {
+    await fetch(`${LOCAL_URL}/webhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
 
-app.post('/retry-queue', async (req, res) => {
-  if (!LOCAL_URL) return res.status(200).send('Local backend offline');
-  const oldQueue = [...queue];
-  queue = [];
-  for (const item of oldQueue) {
-    await forwardWebhook(item);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Forward failed:", err.message);
+    res.status(502).send("Forward failed");
   }
-  res.send(`Retried ${oldQueue.length} queued webhooks`);
 });
 
-app.get('/', (req, res) => res.send('Proxy running'));
+app.get("/", (_, res) => {
+  res.send("Proxy OK");
+});
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Proxy running on port ${process.env.PORT || 3000}`);
+app.listen(PORT, () => {
+  console.log("🚀 Proxy running on port", PORT);
 });
