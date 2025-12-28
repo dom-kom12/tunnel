@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1452696366374584494/hLYEBopGOVeCAu6zEsxzmMkSDE4bXf74PnddS6FAqsQ6ouU2iz0mHG_Q8QdXECZNdsWJ";
 let LOCAL_URL = process.env.LOCAL_URL || null; // render / cloudflared URL
 const MAX_RETRY = 3;
 let queue = [];
